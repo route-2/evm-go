@@ -11,7 +11,12 @@ type EVM struct {
 	storage map[uint64]*big.Int
 	pc      int
 	gas     int
-	opcodes map[uint64]func(*EVM, []byte) bool
+	opcodes map[uint64]opcode
+}
+
+type opcode struct {
+	fn      func(*EVM, []byte) bool
+	gasCost int
 }
 
 func NewEVM(initialGas int) *EVM {
@@ -21,13 +26,13 @@ func NewEVM(initialGas int) *EVM {
 		storage: make(map[uint64]*big.Int),
 		pc:      0,
 		gas:     initialGas,
-		opcodes: map[uint64]func(*EVM, []byte) bool{
-			0x00: (*EVM).opStop,
-			0x01: (*EVM).opAdd,
-			0x02: (*EVM).opMul,
-			0x03: (*EVM).opSub,
-			0x04: (*EVM).opDiv,
-			0x60: (*EVM).opPush1,
+		opcodes: map[uint64]opcode{
+			0x00: {(*EVM).opStop, 0},
+			0x01: {(*EVM).opAdd, 3},
+			0x02: {(*EVM).opMul, 5},
+			0x03: {(*EVM).opSub, 3},
+			0x04: {(*EVM).opDiv, 5},
+			0x60: {(*EVM).opPush1, 3},
 		},
 	}
 	return evm
@@ -103,13 +108,9 @@ func (evm *EVM) execute(bytecode []byte) {
 		op := uint64(bytecode[evm.pc])
 		evm.pc++
 
-		if opcodeFn, ok := evm.opcodes[op]; ok {
-			gasCost := 0
-			if _, exists := evm.opcodes[op]; exists {
-				gasCost = 3 // Update the gas cost accordingly
-			}
-			evm.consumeGas(gasCost)
-			stopExecution = opcodeFn(evm, bytecode)
+		if opcode, ok := evm.opcodes[op]; ok {
+			evm.consumeGas(opcode.gasCost)
+			stopExecution = opcode.fn(evm, bytecode)
 		} else {
 			if 0x60 <= op && op <= 0x7f {
 				numBytes := int(op - 0x5f)
